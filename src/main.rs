@@ -1,16 +1,9 @@
 use {
-    clap::Parser,
     async_openai::{
-        Client,
-        config::OpenAIConfig,
-        types::{
-            CreateChatCompletionRequest,
-            ChatCompletionRequestMessage,
-            ChatCompletionRequestUserMessage,
-            ChatCompletionRequestUserMessageContent,
-            Role,
-        },
-    },
+        config::OpenAIConfig, types::{
+            ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage, ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest, Role
+        }, Client
+    }, clap::Parser, std::io::{self, BufRead, Write}
 };
 
 #[derive(Parser, Debug)]
@@ -28,19 +21,33 @@ async fn main() -> std::io::Result<()> {
         .with_api_base(args.endpoint);
     let client = Client::with_config(config);
 
-    println!("running");
-    let res = client.chat().create(CreateChatCompletionRequest {
-        messages: vec![
-            ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                content: ChatCompletionRequestUserMessageContent::Text("Hello!".to_owned()),
-                role: Role::User,
-                ..Default::default()
-            }),
-        ],
-        ..Default::default()
-    }).await.unwrap();
+    let mut stdout = io::stdout();
+    let stdin = io::stdin();
 
-    println!("result: {:?}", res);
+    let mut messages = Vec::new();
 
-    Ok(())
+    loop {
+        stdout.write("You: ".as_bytes()).unwrap();
+        stdout.flush().unwrap();
+
+        let input = stdin.lock().lines().next().unwrap().unwrap();
+        messages.push(ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
+            content: ChatCompletionRequestUserMessageContent::Text(input),
+            role: Role::User,
+            ..Default::default()
+        }));
+
+        let response = client.chat().create(CreateChatCompletionRequest {
+            messages: messages.clone(),
+            ..Default::default()
+        }).await.unwrap().choices.get(0).unwrap().message.content.as_ref().unwrap().clone();
+
+        println!("Assistant: {}", response);
+
+        messages.push(ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
+            content: Some(response),
+            role: Role::Assistant,
+            ..Default::default()
+        }));
+    }
 }
